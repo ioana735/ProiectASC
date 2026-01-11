@@ -148,5 +148,10 @@ terminare:
     mov ax, 4C00h
     int 21h
 
+
+
+
+;dnjsncs
+;dnjdsn
 code ends
 end start
