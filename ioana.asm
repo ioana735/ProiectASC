@@ -1,86 +1,152 @@
-DATA    SEGMENT
-    octeti DB 3Fh, 7Ah, 12h, 5Ch, 20h        ; șir de octeți (poți adăuga oricâți)
-    lungime DB 5                               ; numărul de octeți (schimbă după nevoie)
-    C_word  DW ?                               ; cuvântul C (16 biți)
-DATA    ENDS
+assume cs:code, ds:data
 
-CODE    SEGMENT
-ASSUME CS:CODE, DS:DATA
+data segment
+    ; ===== PRIMUL COD (nemodificat) =====
+    msg_intro      db 'Introdueti octeti in format hex (8-16 valori): $'
+    msg_too_few    db 13,10,'Trebuie sa introduceti minim 8 octeti.$'
+    msg_too_many   db 13,10,'Nu se pot introduce mai mult de 16 octeti.$'
 
-START:
-  
-    ; inițializare segment date
+    lungime_maxima     db 50
+    lungime_introdusa  db ?
+    sir_introdus       db 50 dup(0)
 
-    MOV AX, DATA
-    MOV DS, AX
+    sir_octeti_binari  db 16 dup(?)
+    numar_octeti       db 0
 
+    cifra_hex_superioara db 0
+    cifra_hex_inferioara db 0
+    octet_binar          db 0
 
-    ; PAS 1: Biții 0–3
-    ; primii 4 biți ai primului octet XOR ultimii 4 biți ai ultimului octet
+    ; ===== REZULTAT FINAL =====
+    C_word dw ?
+data ends
 
-    MOV AL, octeti       ; AL = 3Fh (0011 1111)
-    MOV AH, AL           ; AH = 3Fh
-    SHR AL, 4            ; AL = 0011 1111 >> 4 = 0000 0011
+code segment
+start:
+    mov ax, data
+    mov ds, ax
 
-    AND AL, 0Fh             ; mascare primii 4 biți
+    ; ===== COD 1: CITIRE + CONVERSIE =====
+    mov ah, 09h
+    mov dx, offset msg_intro
+    int 21h
 
-    ; găsim ultimul octet
-    MOV BX lungime         ; BL = lungimea șirului
-    DEC BX                 ; indexul ultimului octet = lungime-1
-    MOV SI, BX              ; SI = indexul ultimului octet
-    MOV BH, octeti[SI]      ; BH = ultimul octet
-    AND BH, 0Fh             ; ultimii 4 biți 
+    mov ah, 0Ah
+    mov dx, offset lungime_maxima
+    int 21h
 
-    XOR AL, BH              ; biții 0–3 ai lui C
-    MOV BL, AL              ; salvăm temporar biții inferiori
+    mov si, offset sir_introdus
+    mov di, offset sir_octeti_binari
+    mov numar_octeti, 0
 
+prelucrare_octeti:
+    mov al, [si]
+    cmp al, 13
+    je verificare_numar
 
-    ; PAS 2: Biții 4–7
-    ; OR între biții 2–5 ai fiecărui octet
-    
-    XOR AL, AL              ; AL = 0, pentru OR final
-    MOV CX, lungime         ; contor = număr octeți
-    MOV SI, 0               ; index în șir
+    cmp al, '9'
+    jle cifra_superioara_cifra
+    sub al, 'A' - 10
+    jmp gata_superioara
+cifra_superioara_cifra:
+    sub al, '0'
+gata_superioara:
+    mov cifra_hex_superioara, al
+    inc si
+    mov al, [si]
 
-PAS2_LOOP:  ;0110 1100->0001 1011
-    MOV AH, octeti[SI]      ; octet curent
-    SHR AH, 2               ; mutăm biții 2–5 la poziția 0–3
-    AND AH, 0Fh             ; păstrăm doar 4 biți-> 0000 1011
-    OR AL, AH               ; OR în AL
-    INC SI
-    LOOP PAS2_LOOP
+    cmp al, '9'
+    jle cifra_inferioara_cifra
+    sub al, 'A' - 10
+    jmp gata_inferioara
+cifra_inferioara_cifra:
+    sub al, '0'
+gata_inferioara:
+    mov cifra_hex_inferioara, al
 
-    SHL AL, 4               ; mutăm în poziția 4–7
-    OR AL, BL               ; combinăm cu biții inferiori
-    MOV BL, AL              ; BL = octet inferior complet
+    mov al, cifra_hex_superioara
+    shl al, 4
+    add al, cifra_hex_inferioara
+    mov [di], al
+    inc di
+    inc numar_octeti
 
+    inc si
+    cmp byte ptr [si], ' '
+    jne prelucrare_octeti
+    inc si
+    jmp prelucrare_octeti
 
-    ; PAS 3: Biții 8–15
-    ; suma tuturor octeților modulo 256
- 
-    XOR AL, AL
-    MOV CX, lungime
-    MOV SI, 0
+verificare_numar:
+    mov al, numar_octeti
+    cmp al, 8
+    jb prea_putini
+    cmp al, 16
+    ja prea_multi
 
-PAS3_LOOP:
-    ADD AL, octeti[SI]
-    INC SI
-    LOOP PAS3_LOOP
+    ; ===== COD 2: CALCUL C_word (MODIFICAT) =====
 
-    MOV BH, AL              ; BH = partea superioară a lui C
+    ; PAS 1: biti 0–3
+    mov al, sir_octeti_binari
+    shr al, 4
+    and al, 0Fh
 
+    mov bl, numar_octeti
+    dec bl
+    mov si, bx
+    mov bh, sir_octeti_binari[si]
+    and bh, 0Fh
+    xor al, bh
+    mov bl, al
 
-    ; construim cuvântul C
+    ; PAS 2: biti 4–7
+    xor al, al
+    mov cx, numar_octeti
+    mov si, 0
 
-    MOV AX, BH
-    SHL AX, 8               ; partea superioară în biții 8–15
-    OR AX, BL               ; combinăm cu partea inferioară
-    MOV C_word, AX          ; salvăm C
+pas2_loop:
+    mov ah, sir_octeti_binari[si]
+    shr ah, 2
+    and ah, 0Fh
+    or al, ah
+    inc si
+    loop pas2_loop
 
+    shl al, 4
+    or al, bl
+    mov bl, al
 
-       
-    MOV AX, 4C00h
-    INT 21h
+    ; PAS 3: biti 8–15
+    xor al, al
+    mov cx, numar_octeti
+    mov si, 0
 
-CODE    ENDS
-END START
+pas3_loop:
+    add al, sir_octeti_binari[si]
+    inc si
+    loop pas3_loop
+
+    mov bh, al
+
+    mov ax, bx
+    mov C_word, ax
+
+    jmp terminare
+
+prea_putini:
+    mov ah, 09h
+    mov dx, offset msg_too_few
+    int 21h
+    jmp terminare
+
+prea_multi:
+    mov ah, 09h
+    mov dx, offset msg_too_many
+    int 21h
+
+terminare:
+    mov ax, 4C00h
+    int 21h
+
+code ends
+end start
