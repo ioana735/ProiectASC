@@ -10,6 +10,8 @@ data segment
     msg_sir_sortat db 13,10,'Sir sortat descrescator: $'
     msg_pozitia db 13,10,'Pozitia octetului cu cei mai multi biti 1 (>3): $'
     msg_cword_bin db 13,10,'Rezultat C_word (binar): $'
+    msg_rotire db 13,10,'Sir sortat rotit: $'
+    linie_noua db 10,13,'$'
 
     lungime_maxima     db 50
     lungime_introdusa  db ?
@@ -346,6 +348,102 @@ next:
     mov dl,al 
     mov ah,02h
     int 21h
+
+
+; ROTIRI SI AFISARE (Bin + Hex)
+; N = suma primilor 2 biti (bit 7 + bit 6)
+; Rotire la stanga cu N pozitii
+
+
+    ; Afisam titlul sectiunii pe ecran
+    mov dx, offset msg_rotire
+    mov ah, 09h
+    int 21h
+
+    mov si, 0               ; Resetam indexul pentru a parcurge sirul de la inceput
+    mov bh, numar_octeti    ; Folosim BH ca numarator de octeti (pentru a lasa CL liber)
+
+loop_octeti_p3:
+    mov al, sir_octeti_binari[si] ; Incarcam octetul curent in AL
+    mov bl, al              ; Facem o copie in BL (pe aceasta o vom roti)
+
+    ; --- 1. CALCUL N (Suma primilor doi biti: bit 7 si bit 6) ---
+    mov dl, al              ; Copiem octetul in DL pentru calcul
+    mov cl, 6               ; Pregatim shiftarea cu 6 pozitii
+    shr dl, cl              ; DL are acum bitii 7 si 6 mutati pe pozitiile 1 si 0
+    
+    mov al, dl              ; Copiem rezultatul in AL pentru a izola bitii
+    and al, 01h             ; AL = valoarea bitului 6 (0 sau 1)
+    shr dl, 1               ; DL = valoarea bitului 7 (0 sau 1)
+    add dl, al              ; DL = N (Suma bit 7 + bit 6, poate fi 0, 1 sau 2)
+
+    ;  ROTIRE CIRCULARA LA STANGA CU N 
+    mov cl, dl              ; Mutam N in CL (necesar pentru instructiunea ROL)
+    cmp cl, 0               ; Verificam daca N este 0
+    je skip_rol_p3          ; Daca N=0, nu este necesara rotirea
+    rol bl, cl              ; Rotim circular octetul la stanga cu N pozitii
+skip_rol_p3:
+    mov sir_octeti_binari[si], bl ; Salvam valoarea rotita inapoi in sir
+
+    ; AFISARE REZULTAT IN BINAR (8 biti) 
+    
+    mov bl,sir_octeti_binari[si]   ; Copiem octetul rotit 
+    mov dh, 8               ; Vom afisa exact 8 biti
+afis_bin_p3:
+    shl bl, 1               ; Shiftam la stanga: bitul cel mai mare pleaca in Carry Flag (CF)
+    mov dl, '0'             ; Presupunem ca bitul extras este 0
+    jnc bit_zero_p3         ; Daca CF=0 (nu avem carry), afisam '0'
+    mov dl, '1'             ; Altfel, daca CF=1, afisam '1'
+bit_zero_p3:
+    mov ah, 02h             ; Functia DOS de afisare caracter
+    int 21h
+
+    dec dh                  ; Scadem numarul de biti ramasi de afisat
+    jnz afis_bin_p3         ; Repetam pana afisam toti cei 8 biti
+
+    ; Afisam un spatiu separator intre binar si hex
+    mov dl, ' '
+    mov ah, 02h
+    int 21h
+
+    ;  AFISARE REZULTAT IN HEX (2 cifre) 
+    
+    
+    ; CIFRA 1 ( primii 4 biti) 
+    mov bl, sir_octeti_binari[si]
+    mov al, bl              ; Luam octetul rotit
+    mov cl, 4               
+    shr al, cl              ; Shiftam 4 pozitii la dreapta pentru a ramane cu primii 4 biti
+    add al, '0'             ; Convertim cifra in cod ASCII
+    cmp al, '9'             ; Verificam daca este cifra (0-9) sau litera (A-F)
+    jbe tip_h1              ; Daca e <= '9', mergem la afisare
+    add al, 7               ; Daca e > '9', adunam 7 pentru a ajunge la codul ASCII 'A'-'F'
+tip_h1:
+    mov dl, al              ; Punem caracterul in DL pentru afisare
+    mov ah, 02h
+    int 21h
+
+    ; CIFRA 2 (ultimii 4 biti) 
+    mov al, bl              ; Luam din nou octetul original
+    and al, 0Fh             ; Folosim masca 00001111 pentru a izola ultimii 4 biti
+    add al, '0'             ; Convertim in ASCII
+    cmp al, '9'
+    jbe tip_h2
+    add al, 7               ; Ajustare pentru litere (A-F)
+tip_h2:
+    mov dl, al
+    mov ah, 02h
+    int 21h
+
+    ; Afisam o linie noua pentru urmatorul octet
+    mov dx, offset linie_noua
+    mov ah, 09h
+    int 21h
+
+    inc si                  ; Trecem la urmatorul octet din memorie
+    dec bh                  ; Scadem contorul de octeti ramasi
+    jnz loop_octeti_p3      ; Daca BH > 0, reluam procesul pentru urmatorul octet
+
 
 
 terminare:
