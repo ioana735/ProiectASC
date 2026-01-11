@@ -1,6 +1,6 @@
 assume cs:code,ds:data
 data segment
-	s db 3Fh, 7Ah, 12h, 5Ch, 20h, 11h, 0FFh, 08h
+	s db 3Fh, 7Ah, 12h, 5Ch, 20h, 11h, 00h, 08h
     l equ $-s
     nrMaxim db 0
     pozitiaMaxima db 0
@@ -35,26 +35,65 @@ nu_interschimba:
     dec bx
     jnz comparare 
 
-    dec cx
-    jnz sortare
+    loop sortare
+
+; afisare sir sortat descrescator
+
+    mov dx, offset mesaj1
+    mov ah,09h
+    int 21h
+
+    mov si,0
+    mov cx,l
+
+afisare_sir_sortat:
+    mov bl,s[si]
+    mov dh,8
+
+biti:
+    shl bl,1
+    jc bit_1
+
+bit_0:
+    mov dl,'0'
+    jmp afisare_bit
+
+bit_1: 
+    mov dl,'1'
+
+afisare_bit:
+    mov ah,02h
+    int 21h
+
+    dec dh
+    jnz biti
+
+; spatiu intre octeti
+    mov dl,' '
+    mov ah,02h
+    int 21h
+
+    inc si
+    loop afisare_sir_sortat
+    
 
 ; octetul cu cel mai mare numar de biti 1
 
     mov cx,l
     mov si,0
     mov dl,0
-    mov nrMaxim
+    mov nrMaxim,0
 
 next_elem:
     mov al,s[si]
     mov bl,al 
     xor bh,bh
-    mov ch,8
+    mov dh,8  ;dh Numara bitii octetului
 
 numara_biti:
     shr bl,1
     adc bh,0
-    dec ch 
+    dec dh 
     jnz numara_biti
 
     cmp bh,nrMaxim
@@ -65,9 +104,9 @@ numara_biti:
     mov nrMaxim, bh
     mov pozitiaMaxima,dl 
 
-next:
-    inc si 
-    inc dl 
+next: 
+    inc si     
+    inc dl     
     dec cx
     jnz next_elem
 
