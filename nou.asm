@@ -1,23 +1,21 @@
 assume cs:code, ds:data
 
 data segment
-    ; ===== PRIMUL COD (nemodificat) =====
-    msg_intro      db 'Introdueti octeti in format hex (8-16 valori): $'
+    msg_intro      db 'Introduceti octeti in format hex (8-16 valori): $'
     msg_too_few    db 13,10,'Trebuie sa introduceti minim 8 octeti.$'
     msg_too_many   db 13,10,'Nu se pot introduce mai mult de 16 octeti.$'
+    msg_result     db 13,10,'C_word = $'
 
-    lungime_maxima     db 50
-    lungime_introdusa  db ?
-    sir_introdus       db 50 dup(0)
+    input_buffer   db 50      ; lungime maxima
+                   db ?       ; lungime reala completata de DOS
+                   db 50 dup(?) ; spatiu stocare
 
     sir_octeti_binari  db 16 dup(?)
     numar_octeti       db 0
 
     cifra_hex_superioara db 0
     cifra_hex_inferioara db 0
-    octet_binar          db 0
 
-    ; ===== REZULTAT FINAL =====
     C_word dw ?
 data ends
 
@@ -26,110 +24,137 @@ start:
     mov ax, data
     mov ds, ax
 
-    ; ===== COD 1: CITIRE + CONVERSIE =====
+    ; afisare mesaj introducere
     mov ah, 09h
     mov dx, offset msg_intro
     int 21h
 
+    ; citire sir de la tastatura
     mov ah, 0Ah
-    mov dx, offset lungime_maxima
+    lea dx, input_buffer
     int 21h
 
-    mov si, offset sir_introdus
+    xor cx, cx
+    mov cl, [input_buffer+1]        
+    mov si, offset input_buffer+2   
     mov di, offset sir_octeti_binari
-    mov numar_octeti, 0
+    mov byte ptr [numar_octeti], 0
 
-prelucrare_octeti:
+; ================= PARSARE HEX =================
+parse_loop:
+    cmp cl, 0
+    jle verificare_numar
     mov al, [si]
-    cmp al, 13
-    je verificare_numar
 
+    cmp al, ' '
+    je skip_space
+    
     cmp al, '9'
-    jle cifra_superioara_cifra
-    sub al, 'A' - 10
-    jmp gata_superioara
-cifra_superioara_cifra:
+    jle high_digit
+    sub al, 7       
+high_digit:
     sub al, '0'
-gata_superioara:
     mov cifra_hex_superioara, al
+    
     inc si
-    mov al, [si]
+    dec cl
 
+    mov al, [si]
     cmp al, '9'
-    jle cifra_inferioara_cifra
-    sub al, 'A' - 10
-    jmp gata_inferioara
-cifra_inferioara_cifra:
+    jle low_digit
+    sub al, 7
+low_digit:
     sub al, '0'
-gata_inferioara:
     mov cifra_hex_inferioara, al
 
     mov al, cifra_hex_superioara
-    shl al, 4
+    push cx
+    mov cl, 4
+    shl al, cl      ; Shiftare corecta pentru 8086 folosind CL
+    pop cx
     add al, cifra_hex_inferioara
+
     mov [di], al
     inc di
-    inc numar_octeti
+    inc byte ptr [numar_octeti]
 
+skip_space:
     inc si
-    cmp byte ptr [si], ' '
-    jne prelucrare_octeti
-    inc si
-    jmp prelucrare_octeti
+    dec cl
+    jmp parse_loop
 
+; ================= VERIFICARE =================
 verificare_numar:
-    mov al, numar_octeti
+    mov al, [numar_octeti]
     cmp al, 8
     jb prea_putini
     cmp al, 16
     ja prea_multi
 
-    ; ===== COD 2: CALCUL C_word (MODIFICAT) =====
+; ================= CALCUL C_word =================
 
-    ; PAS 1: biti 0–3
-    mov al, sir_octeti_binari
-    shr al, 4
+; PAS 1: biti 0–3 (nibble superior din primul octet XOR nibble inferior din ultimul)
+    mov al, [sir_octeti_binari]
+    push cx
+    mov cl, 4
+    shr al, cl
+    pop cx
     and al, 0Fh
-
-    mov bl, numar_octeti
-    dec bl
-    mov si, bx
-    mov bh, sir_octeti_binari[si]
-    and bh, 0Fh
-    xor al, bh
     mov bl, al
 
-    ; PAS 2: biti 4–7
-    xor al, al
-    mov cx, numar_octeti
-    mov si, 0
+    xor ah, ah
+    mov al, [numar_octeti]
+    dec al
+    mov si, ax
+    mov bh, [sir_octeti_binari + si] 
+    and bh, 0Fh
+    xor bl, bh      
 
+; PAS 2: biti 4–7 (OR logic intre bitii 2-5 ai tuturor octetilor)
+    xor al, al      
+    xor ch, ch
+    mov cl, [numar_octeti]
+    mov si, 0
 pas2_loop:
-    mov ah, sir_octeti_binari[si]
-    shr ah, 2
-    and ah, 0Fh
-    or al, ah
+    mov dl, [sir_octeti_binari+si]
+    push cx
+    mov cl, 2
+    shr dl, cl
+    pop cx
+    and dl, 0Fh
+    or al, dl
     inc si
     loop pas2_loop
 
-    shl al, 4
-    or al, bl
-    mov bl, al
+    push cx
+    mov cl, 4
+    shl al, cl      
+    pop cx
+    or al, bl       
+    mov bl, al      
 
-    ; PAS 3: biti 8–15
-    xor al, al
-    mov cx, numar_octeti
+; PAS 3: biti 8–15 (LSB al sumei tuturor octetilor)
+    xor ax, ax      
     mov si, 0
-
+    mov cl, [numar_octeti]
+    xor ch, ch
 pas3_loop:
-    add al, sir_octeti_binari[si]
+    xor dx, dx
+    mov dl, [sir_octeti_binari+si]
+    add ax, dx      
     inc si
     loop pas3_loop
 
-    mov bh, al
+    mov bh, al      ; LSB al sumei devine MSB pentru C_word
+    mov C_word, bx
 
-    mov ax, bx
-    mov C_word, ax
+; ================= AFISARE =================
+    mov ah, 09h
+    mov dx, offset msg_result
+    int 21h
+
+    mov ax, C_word
+    call PrintHexWord
 
     jmp terminare
 
@@ -148,10 +173,39 @@ terminare:
     mov ax, 4C00h
     int 21h
 
+; ================= SUBROUTINE =================
 
+PrintHexWord proc
+    push ax
+    push bx
+    push cx
+    push dx
+    
+    mov bx, ax
+    mov cx, 4       
+print_digit:
+    push cx
+    mov cl, 4
+    rol bx, cl      ; CORECTAT: 8086 accepta doar rotire cu 1 sau cu CL
+    pop cx
+    
+    mov dl, bl
+    and dl, 0Fh
+    add dl, '0'
+    cmp dl, '9'
+    jbe ok_digit
+    add dl, 7
+ok_digit:
+    mov ah, 02h
+    int 21h
+    loop print_digit
+    
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+PrintHexWord endp
 
-
-;dnjsncs
-;dnjdsn
 code ends
-end start
+end start          
