@@ -4,7 +4,7 @@ data segment
     ; mesasejele de afisare
     ; $ marchează sfârșitul pentru funcția AH=09h.
     msg_intro      db 'Introduceti octeti in format hex (8-16 valori): $'
-    ; 13,10 = trecere la linie nouă .
+    ; 13,10 = trecere la linie nouă 
     msg_too_few    db 13,10,'Trebuie sa introduceti minim 8 octeti.$'
     msg_too_many   db 13,10,'Nu se pot introduce mai mult de 16 octeti.$'
 
