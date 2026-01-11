@@ -57,7 +57,7 @@ sau lucrul cu stiva.
 
 Exemplu de rulat: 
 
-Date pentru citire: 3Fh, 7Ah, 12h, 5Ch, 20h, 11h, 00h, 08h 
+Date pentru citire: 3F, 7A, 12, 5C, 20, 11, 00, 08 
 
 Rezultat C_word (binar): 01100000 11110001 
 
